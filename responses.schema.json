@@ -1,0 +1,1080 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jiri.example/design/responses.schema.json",
+  "title": "积日响应信封与白名单 DTO",
+  "$defs": {
+    "TaskView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "_id": {
+          "type": "string",
+          "description": "文档主键；由服务端生成。"
+        },
+        "title": {
+          "type": "string",
+          "description": "任务名称，1～40 个字符。",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "description": {
+          "type": "string",
+          "description": "用户定义的达标标准，最多 300 字。",
+          "maxLength": 300
+        },
+        "icon": {
+          "type": "string",
+          "description": "预置图标编号。",
+          "enum": [
+            "leaf",
+            "book",
+            "moon",
+            "walk",
+            "coin",
+            "star"
+          ]
+        },
+        "timezone": {
+          "type": "string",
+          "description": "固定的 IANA 时区；创建后不能修改。"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "首轮业务开始日期。",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
+        },
+        "status": {
+          "type": "string",
+          "description": "暂停仍会因未打卡而中断连续状态。",
+          "enum": [
+            "ACTIVE",
+            "PAUSED",
+            "ARCHIVED",
+            "DELETED"
+          ]
+        },
+        "activeRoundId": {
+          "type": "string",
+          "description": "当前轮次 ID。"
+        },
+        "currentRuleId": {
+          "type": "string",
+          "description": "当前不可变规则版本 ID。"
+        },
+        "pendingRuleId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "下一轮生效的规则；无变更时为 null。"
+        },
+        "balancePoints": {
+          "type": "integer",
+          "description": "可用积分缓存；必须等于本任务流水净和。",
+          "minimum": 0
+        },
+        "revision": {
+          "type": "integer",
+          "description": "乐观锁版本；每次实际变更递增。",
+          "minimum": 1
+        },
+        "reminder": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "localTime": {
+              "type": "string",
+              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+            }
+          },
+          "required": [
+            "enabled",
+            "localTime"
+          ]
+        },
+        "deletedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "软删除时间；30 天后清理任务相关文档。"
+        }
+      },
+      "required": [
+        "_id",
+        "title",
+        "description",
+        "icon",
+        "timezone",
+        "startDate",
+        "status",
+        "activeRoundId",
+        "currentRuleId",
+        "pendingRuleId",
+        "balancePoints",
+        "revision",
+        "reminder",
+        "deletedAt"
+      ]
+    },
+    "RuleView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "_id": {
+          "type": "string",
+          "description": "规则版本编号。"
+        },
+        "version": {
+          "type": "integer",
+          "description": "任务内规则版本，单调增加。",
+          "minimum": 1
+        },
+        "config": {
+          "$ref": "collections.schema.json#/$defs/RuleConfig",
+          "description": "完整规则对象。"
+        }
+      },
+      "required": [
+        "_id",
+        "version",
+        "config"
+      ]
+    },
+    "RoundView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "_id": {
+          "type": "string",
+          "description": "轮次编号。"
+        },
+        "sequence": {
+          "type": "integer",
+          "description": "任务内轮次号。",
+          "minimum": 1
+        },
+        "ruleId": {
+          "type": "string",
+          "description": "固定引用的规则版本。"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "本轮开始日期，新轮从确认完成的次日开始。",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
+        },
+        "endDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "确认完成日期，进行中为 null。"
+        },
+        "state": {
+          "type": "string",
+          "description": "本轮状态。",
+          "enum": [
+            "OPEN",
+            "READY",
+            "CLAIMED"
+          ]
+        },
+        "successCount": {
+          "type": "integer",
+          "description": "本轮成功次数，包含合规补卡。",
+          "minimum": 0
+        },
+        "currentGoalStreak": {
+          "type": "integer",
+          "description": "本轮准时成功形成的连续长度。",
+          "minimum": 0
+        },
+        "maxGoalStreak": {
+          "type": "integer",
+          "description": "本轮曾达到的最长连续长度；连续目标以此判断。",
+          "minimum": 0
+        },
+        "revision": {
+          "type": "integer",
+          "description": "乐观锁版本；每次实际变更递增。",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "_id",
+        "sequence",
+        "ruleId",
+        "startDate",
+        "endDate",
+        "state",
+        "successCount",
+        "currentGoalStreak",
+        "maxGoalStreak",
+        "revision"
+      ]
+    },
+    "CheckinView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkinId": {
+          "type": "string",
+          "description": "SHA256(ownerUserId|taskId|businessDate)；与轮次无关。"
+        },
+        "businessDate": {
+          "type": "string",
+          "description": "按任务固定时区划分的自然日。",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
+        },
+        "outcome": {
+          "type": "string",
+          "description": "UNRECORDED 为撤销后的软记录，不计分。",
+          "enum": [
+            "SUCCESS",
+            "FAILURE",
+            "UNRECORDED"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "description": "补卡不给连续加成，也不恢复连续状态。",
+          "enum": [
+            "ON_TIME",
+            "BACKFILL"
+          ]
+        },
+        "awardedPoints": {
+          "type": "integer",
+          "description": "当前有效打卡获得的积分，失败/撤销为 0。",
+          "minimum": 0
+        },
+        "streakAfter": {
+          "type": "integer",
+          "description": "准时成功时的实际连续天数；补卡为 0。",
+          "minimum": 0
+        },
+        "note": {
+          "type": "string",
+          "description": "可选私密备注，最多 300 字。",
+          "maxLength": 300
+        },
+        "revision": {
+          "type": "integer",
+          "description": "乐观锁版本；每次实际变更递增。",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "checkinId",
+        "businessDate",
+        "outcome",
+        "source",
+        "awardedPoints",
+        "streakAfter",
+        "note",
+        "revision"
+      ]
+    },
+    "LedgerView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ledgerId": {
+          "type": "string",
+          "description": "由业务来源、记录 ID、记录版本和流水类型生成。"
+        },
+        "kind": {
+          "type": "string",
+          "description": "获得、冲正或兑换。",
+          "enum": [
+            "CHECKIN_AWARD",
+            "CHECKIN_REVERSAL",
+            "GOAL_DEBIT"
+          ]
+        },
+        "delta": {
+          "type": "integer",
+          "description": "正数获得、负数扣除；禁止 0。",
+          "not": {
+            "const": 0
+          }
+        },
+        "balanceAfter": {
+          "type": "integer",
+          "description": "该条流水提交后的余额快照。",
+          "minimum": 0
+        },
+        "sourceId": {
+          "type": "string",
+          "description": "关联 checkinId 或 claimId。"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "服务端 UTC 时间，固定毫秒精度。",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ledgerId",
+        "kind",
+        "delta",
+        "balanceAfter",
+        "sourceId",
+        "createdAt"
+      ]
+    },
+    "ClaimView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claimId": {
+          "type": "string",
+          "description": "确定性主键：claim:roundId。"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "所属任务。"
+        },
+        "roundId": {
+          "type": "string",
+          "description": "被关闭的轮次。"
+        },
+        "goalSnapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": [
+                "POINTS_BALANCE",
+                "SUCCESS_COUNT",
+                "CONSECUTIVE_DAYS"
+              ]
+            },
+            "target": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "type",
+            "target"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "SUCCESS_COUNT",
+                      "CONSECUTIVE_DAYS"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "target": {
+                    "maximum": 3650
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "rewardSnapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "budgetCents": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100000000
+            },
+            "currency": {
+              "const": "CNY"
+            }
+          },
+          "required": [
+            "description",
+            "budgetCents",
+            "currency"
+          ]
+        },
+        "debitedPoints": {
+          "type": "integer",
+          "description": "积分目标扣目标值，次数/天数目标为 0。",
+          "minimum": 0
+        },
+        "balanceAfter": {
+          "type": "integer",
+          "description": "兑换后余额。",
+          "minimum": 0
+        },
+        "rewardRecord": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "note": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "amountCents": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "note",
+            "amountCents"
+          ]
+        },
+        "claimedBusinessDate": {
+          "type": "string",
+          "description": "确认完成的业务日期。",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
+        },
+        "nextRoundId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "一次性任务为 null；循环任务关联新轮。"
+        }
+      },
+      "required": [
+        "claimId",
+        "taskId",
+        "roundId",
+        "goalSnapshot",
+        "rewardSnapshot",
+        "debitedPoints",
+        "balanceAfter",
+        "rewardRecord",
+        "claimedBusinessDate",
+        "nextRoundId"
+      ]
+    },
+    "GoalProgress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "POINTS_BALANCE",
+            "SUCCESS_COUNT",
+            "CONSECUTIVE_DAYS"
+          ]
+        },
+        "current": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "type",
+        "current",
+        "target",
+        "ready"
+      ]
+    },
+    "Progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "businessDate": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
+        },
+        "balancePoints": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actualStreakDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "todayPotentialPoints": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "todayOutcome": {
+          "enum": [
+            "SUCCESS",
+            "FAILURE",
+            "UNRECORDED"
+          ]
+        },
+        "goalProgress": {
+          "$ref": "#/$defs/GoalProgress"
+        },
+        "taskRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "canCheckin": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "businessDate",
+        "balancePoints",
+        "actualStreakDays",
+        "todayPotentialPoints",
+        "todayOutcome",
+        "goalProgress",
+        "taskRevision",
+        "canCheckin"
+      ]
+    },
+    "TaskDetailResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/TaskView"
+        },
+        "rule": {
+          "$ref": "#/$defs/RuleView"
+        },
+        "round": {
+          "$ref": "#/$defs/RoundView"
+        },
+        "today": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CheckinView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        }
+      },
+      "required": [
+        "task",
+        "rule",
+        "round",
+        "today",
+        "progress"
+      ]
+    },
+    "TaskResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/TaskView"
+        }
+      },
+      "required": [
+        "task"
+      ]
+    },
+    "RuleScheduleResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pendingRuleId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effectiveFrom": {
+          "const": "NEXT_ROUND"
+        },
+        "taskRevision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "pendingRuleId",
+        "version",
+        "effectiveFrom",
+        "taskRevision"
+      ]
+    },
+    "BootstrapResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "user": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "userId": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ACTIVE",
+                "DELETING"
+              ]
+            },
+            "defaultTimezone": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "userId",
+            "status",
+            "defaultTimezone"
+          ]
+        },
+        "businessDate": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date"
+        },
+        "templateVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "user",
+        "businessDate",
+        "templateVersion"
+      ]
+    },
+    "TaskListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/TaskView"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        }
+      },
+      "required": [
+        "task",
+        "progress"
+      ]
+    },
+    "TaskListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TaskListItem"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "CheckinListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckinView"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "LedgerListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LedgerView"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "ClaimListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClaimView"
+          }
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "nextCursor"
+      ]
+    },
+    "CheckinSubmitResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkinId": {
+          "type": "string"
+        },
+        "awardedPoints": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "balancePoints": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actualStreakDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "goalProgress": {
+          "$ref": "#/$defs/GoalProgress"
+        },
+        "taskRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "applied": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "checkinId",
+        "awardedPoints",
+        "balancePoints",
+        "actualStreakDays",
+        "goalProgress",
+        "taskRevision",
+        "applied"
+      ]
+    },
+    "CheckinCorrectResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkin": {
+          "$ref": "#/$defs/CheckinView"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "pointDelta": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "checkin",
+        "progress",
+        "pointDelta"
+      ]
+    },
+    "CheckinBackfillResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checkin": {
+          "$ref": "#/$defs/CheckinView"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "awardedPoints": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "checkin",
+        "progress",
+        "awardedPoints"
+      ]
+    },
+    "GoalClaimResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/ClaimView"
+        },
+        "task": {
+          "$ref": "#/$defs/TaskView"
+        },
+        "nextRound": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RoundView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "balancePoints": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "claim",
+        "task",
+        "nextRound",
+        "balancePoints"
+      ]
+    },
+    "ExportRequestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "status": {
+          "const": "PENDING"
+        }
+      },
+      "required": [
+        "jobId",
+        "status"
+      ]
+    },
+    "ExportGetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "RUNNING",
+            "READY",
+            "FAILED",
+            "EXPIRED"
+          ]
+        },
+        "downloadUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "urlExpiresAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "status",
+        "downloadUrl",
+        "urlExpiresAt",
+        "errorCode"
+      ]
+    },
+    "AccountDeleteResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "DELETING"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "jobId"
+      ]
+    },
+    "SuccessEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "code": {
+          "const": "OK"
+        },
+        "requestId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "data": {
+          "type": "object"
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "replayed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "replayed"
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "code",
+        "requestId",
+        "serverTime",
+        "data",
+        "meta"
+      ]
+    },
+    "ErrorEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "code": {
+          "enum": [
+            "INVALID_ARGUMENT",
+            "UNAUTHORIZED",
+            "NOT_FOUND",
+            "VERSION_CONFLICT",
+            "BACKFILL_NOT_ALLOWED",
+            "ROUND_CLOSED",
+            "TASK_INACTIVE",
+            "GOAL_NOT_READY",
+            "REWARD_BUDGET_EXCEEDED",
+            "IDEMPOTENCY_CONFLICT",
+            "RATE_LIMITED",
+            "INTERNAL_ERROR",
+            "ACCOUNT_DELETING"
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "details": {
+              "type": "object"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "message",
+            "details",
+            "retryable"
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "code",
+        "requestId",
+        "serverTime",
+        "error"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SuccessEnvelope"
+    },
+    {
+      "$ref": "#/$defs/ErrorEnvelope"
+    }
+  ]
+}

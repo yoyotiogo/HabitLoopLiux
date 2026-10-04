@@ -1,21 +1,31 @@
 {
-  "name": "wxcloudrun-express",
+  "name": "habitloop-service",
   "version": "1.0.0",
-  "description": "微信云托管 express 框架模版",
-  "main": "index.js",
+  "description": "HabitLoop 微信小程序服务端",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.16.4",
-    "morgan": "^1.10.0",
-    "mysql2": "^2.3.2",
-    "sequelize": "^6.8.0"
+    "express": "^5.1.0",
+    "mysql2": "^3.14.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3",
+    "tsx": "^4.19.3"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=22.0.0"
   }
 }
