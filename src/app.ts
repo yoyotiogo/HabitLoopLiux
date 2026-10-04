@@ -5,11 +5,13 @@ import { Identity, Repository } from './types';
 
 export interface AppOptions { allowedAppId: string; allowLocalAuth?: boolean; }
 export class Authentication {
-  static identity(req: Request, options: AppOptions): Identity | null {
-    if (options.allowLocalAuth && req.socket.remoteAddress?.includes('127.0.0.1') && req.get('x-habitloop-test-user')) return { appId: options.allowedAppId, openId: req.get('x-habitloop-test-user')! };
+  static check(req: Request, options: AppOptions) {
+    if (options.allowLocalAuth && req.socket.remoteAddress?.includes('127.0.0.1') && req.get('x-habitloop-test-user')) return { identity: { appId: options.allowedAppId, openId: req.get('x-habitloop-test-user')! }, details: null };
     const appId = req.get('x-wx-appid'), openId = req.get('x-wx-openid'), source = req.get('x-wx-source');
-    if (!['wx_client','wx_devtools'].includes(source || '') || appId !== options.allowedAppId || !openId || openId.length > 128) return null;
-    return { appId, openId };
+    // Cloud Run provides an opaque source marker; VM documentation examples are not an enum contract.
+    const reason = !source?.trim() ? 'MISSING_SOURCE' : !appId ? 'MISSING_APP_ID' : appId !== options.allowedAppId ? 'APP_ID_MISMATCH' : !openId?.trim() ? 'MISSING_OPEN_ID' : openId.length > 128 ? 'INVALID_OPEN_ID' : null;
+    if (reason) return { identity: null, details: { reason, source: (source || '').slice(0, 64), sourcePresent: !!source?.trim(), appIdPresent: !!appId, receivedAppId: (appId || '').slice(0, 32), expectedAppId: options.allowedAppId, appIdMatches: appId === options.allowedAppId, openIdPresent: !!openId?.trim() } };
+    return { identity: { appId: appId!, openId: openId! }, details: null };
   }
 }
 export class RateLimiter {
@@ -30,8 +32,12 @@ export function createApp(service: HabitService, repository: Repository, options
   app.get('/', (_req, res) => res.json({ application: 'HabitLoop', version: '1.0.0', status: 'running' }));
   app.get('/healthz', (_req, res) => res.json({ ok: true, application: 'HabitLoop' }));
   app.post('/api/v1/commands', async (req, res) => {
-    const identity = Authentication.identity(req, options);
-    if (!identity) return res.status(401).json({ ok: false, code: 'UNAUTHORIZED', requestId: req.body?.requestId || randomUUID(), serverTime: new Date().toISOString(), error: { message: '请使用微信小程序访问。', details: {}, retryable: false } });
+    const authentication = Authentication.check(req, options), identity = authentication.identity;
+    if (!identity) {
+      const requestId = typeof req.body?.requestId === 'string' && req.body.requestId.length <= 128 ? req.body.requestId : randomUUID();
+      console.warn('habitloop_auth_rejected', JSON.stringify({ requestId, ...authentication.details }));
+      return res.status(401).json({ ok: false, code: 'UNAUTHORIZED', requestId, serverTime: new Date().toISOString(), error: { message: '微信身份校验失败，请检查云托管接入配置。', details: authentication.details, retryable: false } });
+    }
     if (!limiter.allow(identity)) return res.status(429).json({ ok: false, code: 'RATE_LIMITED', requestId: req.body?.requestId || randomUUID(), serverTime: new Date().toISOString(), error: { message: '操作过于频繁，请稍后重试。', details: {}, retryable: true } });
     return res.json(await service.execute(identity, req.body));
   });
